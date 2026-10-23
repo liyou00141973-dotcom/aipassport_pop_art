@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Passport 工牌配置</title>
+<style>
+  :root{
+    --paper:#fffde8; --ink:#111; --red:#ff2a55; --hilite:#ffe600;
+    --line:#e3e0cf; --muted:#6b6a60;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#f3f2ea;color:var(--ink);
+       font:14px/1.6 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+  header{background:var(--ink);color:#fff;padding:14px 22px;
+         display:flex;align-items:baseline;gap:12px}
+  header h1{margin:0;font-size:17px;letter-spacing:1px}
+  header span{color:#bbb;font-size:12px}
+  main{max-width:1040px;margin:20px auto 40px;padding:0 20px;
+       display:grid;grid-template-columns:1fr 300px;gap:22px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:22px;min-width:0}
+  .card{background:#fff;border:2px solid var(--ink);border-radius:8px;
+        box-shadow:4px 4px 0 var(--ink);padding:18px}
+  h2{margin:0 0 14px;font-size:14px;letter-spacing:1px;text-transform:uppercase;
+     border-bottom:2px solid var(--line);padding-bottom:8px}
+  label{display:block;font-weight:700;margin:14px 0 5px}
+  label small{font-weight:400;color:var(--muted);margin-left:6px}
+  input,textarea{width:100%;font:inherit;padding:8px 10px;border:2px solid var(--ink);
+                 border-radius:5px;background:#fffdf5;color:inherit}
+  textarea{height:74px;resize:vertical}
+  input:focus,textarea:focus{outline:3px solid var(--hilite);outline-offset:-1px}
+  .ctl{display:flex;gap:10px;margin-top:6px}
+  .ctl>div{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
+  .ctl>div.sz{flex:0 0 118px}
+  .ctl span{font-size:12px;color:var(--muted);white-space:nowrap}
+  select{flex:1;min-width:0;font:inherit;padding:7px 8px;border:2px solid var(--ink);
+         border-radius:5px;background:#fffdf5;color:inherit}
+  select:focus{outline:3px solid var(--hilite);outline-offset:-1px}
+  .hints{margin-top:16px;display:flex;flex-direction:column;gap:6px}
+  .hint{padding:7px 10px;border-radius:5px;font-size:13px;border-left:4px solid}
+  .hint.ok{background:#eefbe9;border-color:#2fa63c}
+  .hint.warn{background:#fff6df;border-color:#e79b00}
+  .hint.err{background:#ffe9ee;border-color:var(--red)}
+  .metrics{margin-top:10px;color:var(--muted);font-size:12px;font-family:Consolas,monospace}
+  .row{display:flex;gap:10px;align-items:flex-end;margin-top:16px;flex-wrap:wrap}
+  .row .grow{flex:1;min-width:120px}
+  button{font:inherit;font-weight:700;padding:9px 16px;border:2px solid var(--ink);
+         border-radius:5px;background:var(--hilite);cursor:pointer;
+         box-shadow:3px 3px 0 var(--ink)}
+  button.primary{background:var(--red);color:#fff}
+  button.flat{background:#fff;box-shadow:none;font-weight:400;padding:7px 10px}
+  button:active{transform:translate(2px,2px);box-shadow:none}
+  button[disabled]{opacity:.5;cursor:not-allowed}
+  .preview{text-align:center}
+  .preview img{width:240px;height:320px;border:2px solid var(--ink);border-radius:6px;
+               background:#000;image-rendering:pixelated}
+  .preview p{color:var(--muted);font-size:12px;margin:10px 0 0}
+  .log{margin-top:20px;background:#111;color:#b6f5c1;border-radius:6px;padding:10px 12px;
+       font:12px/1.55 Consolas,monospace;height:150px;overflow:auto;white-space:pre-wrap}
+
+  /* ---- 素材上传 / 头像取景编辑器 ---- */
+  input[type=file]{display:none}
+  input[type=range]{width:100%;padding:0;border:0;background:transparent;accent-color:#ff2a55}
+  .upload{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .thumb{width:56px;height:126px;border:2px solid var(--line);border-radius:4px;
+         background:#fffdf5;display:flex;align-items:center;justify-content:center;
+         overflow:hidden;flex:0 0 auto}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .thumb .none{font-size:11px;color:var(--muted);text-align:center;padding:4px}
+  .editor{display:flex;gap:18px;align-items:flex-start;margin-top:14px;flex-wrap:wrap}
+  .editor canvas{border:2px solid var(--ink);border-radius:6px;background:#eceae0;
+                 cursor:grab;touch-action:none;max-width:100%}
+  .editor canvas:active{cursor:grabbing}
+  .editor .side{flex:1;min-width:190px}
+  .editor .side p{margin:0 0 8px;color:var(--muted);font-size:12px}
+  .slot{border:2px dashed var(--line);border-radius:6px;padding:10px 12px;display:flex;
+        gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .slot img{width:76px;height:76px;object-fit:contain;background:#fff;
+            border:1px solid var(--line);border-radius:4px}
+  .slot .ph{width:76px;height:76px;background:#fffdf5;border:1px solid var(--line);
+            border-radius:4px}
+  .slot .meta{flex:1;min-width:140px;font-size:12px;color:var(--muted)}
+  .slot .meta b{display:block;color:var(--ink);font-size:13px;margin-bottom:2px}
+  .slot.tall img,.slot.tall .ph{width:76px;height:101px}
+  .seg{display:inline-flex;border:2px solid var(--ink);border-radius:6px;
+       overflow:hidden;margin-bottom:10px}
+  .seg button{border:0;box-shadow:none;border-radius:0;background:#fff;padding:6px 12px;
+              font-size:12px}
+  .seg button.on{background:var(--hilite)}
+</style>
+</head>
+<body>
+<header>
+  <h1>PASSPORT 工牌配置</h1>
+  <span>文案/字体/字号 + 头像人像 + 微信·钉钉二维码 + 启动页图片 → 实时预览 → 一键生成并上传（不重刷固件）</span>
+</header>
+
+<main>
+  <div class="col">
+    <div class="card">
+      <h2>工牌内容</h2>
+
+      <label>姓名 <small>居中大字；字距会按姓名框宽度自动收紧，不再溢出</small></label>
+      <input id="name" maxlength="24" placeholder="示例姓名">
+      <div class="ctl">
+        <div><span>字体</span><select id="name_font"></select></div>
+        <div class="sz"><span>字号</span><select id="name_size"></select></div>
+      </div>
+
+      <label>角色岗位 <small>红底白字条幅（过长会自动加宽）</small></label>
+      <input id="role" maxlength="24" placeholder="示例岗位">
+      <div class="ctl">
+        <div><span>字体</span><select id="role_font"></select></div>
+        <div class="sz"><span>字号</span><select id="role_size"></select></div>
+      </div>
+
+      <label>简介 <small>旁白框正文，行数受字号影响</small></label>
+      <textarea id="bio" maxlength="60" placeholder="示例简介，请替换"></textarea>
+      <div class="ctl">
+        <div><span>字体</span><select id="bio_font"></select></div>
+        <div class="sz"><span>字号</span><select id="bio_size"></select></div>
+      </div>
+
+      <div class="hints" id="hints"></div>
+      <div class="metrics" id="metrics"></div>
+    </div>
+
+    <div class="card">
+      <h2>头像人像</h2>
+      <p style="margin:0;color:var(--muted);font-size:12px">
+        上传后只替换分镜框里的人像；HERO 角标与 BOOM! 贴纸保持不变。默认按 cover 铺满 98×220 分镜框（无留白），
+        可在右侧画面里拖动改位置、滚轮或滑块改缩放。
+      </p>
+      <div class="upload">
+        <div class="thumb" id="avThumb"><span class="none">出厂人像</span></div>
+        <div>
+          <button id="avPick">上传头像图片</button>
+          <button class="flat" id="avRemove">恢复出厂人像</button>
+        </div>
+        <input type="file" id="avFile" accept="image/*">
+      </div>
+
+      <div class="editor">
+        <canvas id="avCanvas"></canvas>
+        <div class="side">
+          <p>取景预览（分镜框 98×220，放大 3×）</p>
+          <label style="margin-top:0">缩放 <small id="avZoomTxt">1.00×</small></label>
+          <input type="range" id="avZoom" min="100" max="400" step="1" value="100">
+          <div class="upload">
+            <button class="flat" id="avReset">恢复默认取景</button>
+          </div>
+          <p style="margin-top:10px">拖动画面平移 · 滚轮缩放 · 超出框的部分会被裁掉</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>微信 / 钉钉二维码</h2>
+      <p style="margin:0;color:var(--muted);font-size:12px">
+        上传后等比缩放进 174×174 白框并居中（不裁切、不变形），SCAN! 贴纸不受影响。
+      </p>
+      <div id="qrSlots"></div>
+      <input type="file" id="qrFile" accept="image/*">
+    </div>
+
+    <div class="card">
+      <h2>启动页图片</h2>
+      <p style="margin:0;color:var(--muted);font-size:12px">
+        开机与熄屏唤醒时整屏显示的启动图。上传后按 cover 铺满 240×320（超出部分居中裁掉，不留白边）。
+        未上传时板子显示中性占位启动图。
+      </p>
+      <div id="splashSlot"></div>
+      <input type="file" id="splashFile" accept="image/*">
+    </div>
+
+    <div class="card">
+      <h2>生成与上传</h2>
+      <div class="row" style="margin-top:0">
+        <div class="grow">
+          <label style="margin-top:0">串口</label>
+          <input id="port" value="">
+        </div>
+        <button class="flat" id="portsBtn">刷新列表</button>
+        <button class="primary" id="uploadBtn">生成并上传到板子</button>
+        <button id="genBtn">只生成 raw 文件</button>
+      </div>
+      <div class="log" id="log">就绪。右侧预览与板子上屏逐像素一致（同一套渲染代码）。</div>
+    </div>
+  </div>
+
+  <div class="card preview">
+    <h2>实时预览</h2>
+    <div class="seg">
+      <button data-page="home" class="on">P1 首页</button>
+      <button data-page="splash">启动页</button>
+      <button data-page="qr_ding">P2 钉钉码</button>
+      <button data-page="qr_wx">P2 微信码</button>
+    </div>
+    <img id="preview" alt="预览">
+    <p>与板子同一套渲染代码，逐像素一致。<br>改文案/字体/字号/头像/二维码，板端 .py 与精灵块都不用动，只换 raw 文件。</p>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null, busy = false, page = 'home';
+
+/* ---- 头像取景：与 bake_badge.avatar_render 同一套数学 ----
+   scale = max(W/sw, H/sh) * zoom；ox = (nw-W)/2 - dx（夹到 [0, nw-W]） */
+const AV = {W:98, H:220, S:3, zoom:1, dx:0, dy:0, img:null};
+const AV_SMIN = 1, AV_SMAX = 4;
+const avCanvas = $('avCanvas'), avCtx = avCanvas.getContext('2d');
+avCanvas.width = AV.W * AV.S;
+avCanvas.height = AV.H * AV.S;
+
+function collect(){
+  return {name:$('name').value, role:$('role').value, bio:$('bio').value,
+          name_font:$('name_font').value, name_size:+$('name_size').value,
+          role_font:$('role_font').value, role_size:+$('role_size').value,
+          bio_font:$('bio_font').value, bio_size:+$('bio_size').value,
+          avatar_zoom:+AV.zoom.toFixed(4), avatar_dx:+AV.dx.toFixed(2), avatar_dy:+AV.dy.toFixed(2)};
+}
+
+function showHints(hints){
+  $('hints').innerHTML = hints.map(h =>
+    `<div class="hint ${h.level}">${h.text}</div>`).join('');
+}
+
+async function preview(){
+  if (busy) return;
+  busy = true;
+  $('preview').style.opacity = .45;
+  try{
+    const r = await fetch('/api/preview', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign(collect(), {page}))});
+    const j = await r.json();
+    if (j.ok){
+      $('preview').src = j.image;
+      showHints(j.hints);
+      const m = j.metrics;
+      $('metrics').textContent =
+        `姓名宽 ${m.name_w}px（自适应字距 ${m.name_ls}px） / 岗位宽 ${m.role_w}px / ` +
+        `简介 ${m.bio_lines} 行（上限 ${m.bio_max_lines} 行，行距 ${m.bio_line_h}px）`;
+    }else{
+      showHints([{level:'err', text:j.error}]);
+    }
+  }catch(e){
+    showHints([{level:'err', text:'预览失败：'+e}]);
+  }finally{
+    $('preview').style.opacity = 1;
+    busy = false;
+  }
+}
+
+function queuePreview(){
+  clearTimeout(timer);
+  timer = setTimeout(preview, 350);
+}
+
+/* ---- 头像取景编辑器 ---- */
+function avGeom(){
+  if (!AV.img) return null;
+  const sw = AV.img.naturalWidth, sh = AV.img.naturalHeight;
+  const s = Math.max(AV.W/sw, AV.H/sh) * AV.zoom;
+  return {sw, sh, s, nw:sw*s, nh:sh*s,
+          maxdx:(sw*s - AV.W)/2, maxdy:(sh*s - AV.H)/2};
+}
+
+function avDraw(){
+  avCtx.fillStyle = '#eceae0';
+  avCtx.fillRect(0, 0, avCanvas.width, avCanvas.height);
+  const g = avGeom();
+  if (!g){
+    avCtx.fillStyle = '#9a978a';
+    avCtx.font = '13px sans-serif';
+    avCtx.textAlign = 'center';
+    avCtx.fillText('尚未上传头像', avCanvas.width/2, avCanvas.height/2);
+    return;
+  }
+  AV.dx = Math.min(Math.max(AV.dx, -g.maxdx), g.maxdx);
+  AV.dy = Math.min(Math.max(AV.dy, -g.maxdy), g.maxdy);
+  const sx = ((g.nw - AV.W)/2 - AV.dx) / g.s;
+  const sy = ((g.nh - AV.H)/2 - AV.dy) / g.s;
+  avCtx.imageSmoothingQuality = 'high';
+  avCtx.drawImage(AV.img, sx, sy, AV.W/g.s, AV.H/g.s,
+                  0, 0, avCanvas.width, avCanvas.height);
+  avCtx.strokeStyle = 'rgba(255,42,85,.5)';
+  avCtx.lineWidth = 1;
+  avCtx.beginPath();
+  avCtx.moveTo(avCanvas.width/2, 0); avCtx.lineTo(avCanvas.width/2, avCanvas.height);
+  avCtx.moveTo(0, avCanvas.height/2); avCtx.lineTo(avCanvas.width, avCanvas.height/2);
+  avCtx.stroke();
+}
+
+function setZoom(z, draw = true){
+  AV.zoom = Math.min(Math.max(z, AV_SMIN), AV_SMAX);
+  $('avZoom').value = Math.round(AV.zoom * 100);
+  $('avZoomTxt').textContent = AV.zoom.toFixed(2) + '×';
+  if (draw) avDraw();
+}
+
+let drag = null;
+avCanvas.addEventListener('pointerdown', e => {
+  if (!AV.img) return;
+  avCanvas.setPointerCapture(e.pointerId);
+  drag = {x:e.clientX, y:e.clientY};
+});
+avCanvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  AV.dx += (e.clientX - drag.x) / AV.S;
+  AV.dy += (e.clientY - drag.y) / AV.S;
+  drag = {x:e.clientX, y:e.clientY};
+  avDraw();
+  queuePreview();
+});
+avCanvas.addEventListener('pointerup', () => { drag = null; });
+avCanvas.addEventListener('pointercancel', () => { drag = null; });
+avCanvas.addEventListener('wheel', e => {
+  if (!AV.img) return;
+  e.preventDefault();
+  setZoom(AV.zoom * (e.deltaY < 0 ? 1.1 : 1/1.1));
+  queuePreview();
+}, {passive:false});
+
+$('avZoom').addEventListener('input', () => {
+  setZoom(+$('avZoom').value / 100);
+  queuePreview();
+});
+$('avReset').onclick = () => {
+  setZoom(1); AV.dx = 0; AV.dy = 0; avDraw(); queuePreview();
+};
+
+function loadImg(url){
+  return new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error('图片加载失败'));
+    i.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+  });
+}
+
+function fileToDataURL(f){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('读取文件失败'));
+    r.readAsDataURL(f);
+  });
+}
+
+/* ---- 二维码槽位 ---- */
+const QR_SLOTS = [
+  {slot:'qr_wx',   title:'微信二维码'},
+  {slot:'qr_ding', title:'钉钉二维码'},
+];
+let pendingSlot = null;
+
+function renderQrSlots(assets){
+  $('qrSlots').innerHTML = QR_SLOTS.map(s => {
+    const a = assets[s.slot];
+    const thumb = a.custom ? `<img src="${a.thumb}" alt="">` : `<div class="ph"></div>`;
+    const meta = a.custom
+      ? `已上传 ${a.width}×${a.height}px，将等比缩放进 174×174 白框`
+      : '未上传，板子显示出厂二维码';
+    const del = a.custom ? `<button class="flat" data-del="${s.slot}">删除</button>` : '';
+    return `<div class="slot">${thumb}
+      <div class="meta"><b>${s.title}</b>${meta}</div>
+      <div><button class="flat" data-up="${s.slot}">上传图片</button>${del}</div></div>`;
+  }).join('');
+}
+
+function renderSplashSlot(assets){
+  const a = assets.splash;
+  const thumb = a.custom ? `<img src="${a.thumb}" alt="">` : `<div class="ph"></div>`;
+  const meta = a.custom
+    ? `已上传 ${a.width}×${a.height}px，将 cover 铺满 240×320（多余裁掉）`
+    : '未上传，开机显示中性占位启动图';
+  const del = a.custom ? `<button class="flat" data-del="splash">删除</button>` : '';
+  $('splashSlot').innerHTML = `<div class="slot tall">${thumb}
+    <div class="meta"><b>启动页图片</b>${meta}</div>
+    <div><button class="flat" data-up="splash">上传图片</button>${del}</div></div>`;
+}
+
+/* 各上传槽位的缩略图/状态统一在这里回显 */
+function renderAssets(assets){
+  renderQrSlots(assets);
+  renderSplashSlot(assets);
+  $('avThumb').innerHTML = assets.avatar.custom
+    ? `<img src="${assets.avatar.thumb}" alt="">`
+    : '<span class="none">出厂人像</span>';
+}
+
+async function refreshAssets(){
+  const st = await (await fetch('/api/assets')).json();
+  renderAssets(st.assets);
+  return st.assets;
+}
+
+async function uploadAsset(slot, data){
+  const r = await fetch('/api/upload', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({slot, data})});
+  const j = await r.json();
+  if (!j.ok){ showHints([{level:'err', text:j.error}]); return false; }
+  renderAssets(j.assets);
+  return true;
+}
+
+async function clearAssetSlot(slot){
+  const r = await fetch('/api/clear_asset', {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({slot})});
+  const j = await r.json();
+  if (!j.ok){ showHints([{level:'err', text:j.error}]); return; }
+  renderAssets(j.assets);
+  if (slot === 'avatar'){
+    AV.img = null;
+    avDraw();
+  }
+  queuePreview();
+}
+
+/* ---- 串口 + 生成 ---- */
+let logTimer = null;
+async function pollJob(){
+  try{
+    const j = await (await fetch('/api/job')).json();
+    $('log').textContent = j.log.length ? j.log.join('\n') : '…';
+    $('log').scrollTop = $('log').scrollHeight;
+    if (j.ok === true){
+      $('log').textContent += '\n✔ ' + j.kind + ' 已完成';
+      clearInterval(logTimer); logTimer = null; setBusy(false);
+    }else if (j.ok === false){
+      clearInterval(logTimer); logTimer = null; setBusy(false);
+    }
+  }catch(e){ /* 轮询失败忽略 */ }
+}
+
+function setBusy(on){
+  $('uploadBtn').disabled = on;
+  $('genBtn').disabled = on;
+}
+
+async function apply(upload){
+  const p = collect();
+  p.upload = upload;
+  p.port = $('port').value.trim();
+  try{
+    const r = await fetch('/api/apply', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
+    const j = await r.json();
+    if (!j.ok){ showHints([{level:'err', text:j.error}]); return; }
+    showHints(j.hints);
+    setBusy(true);
+    $('log').textContent = '已提交，等待执行…';
+    if (!logTimer) logTimer = setInterval(pollJob, 700);
+  }catch(e){
+    showHints([{level:'err', text:'提交失败：'+e}]);
+  }
+}
+
+$('portsBtn').onclick = async () => {
+  const j = await (await fetch('/api/ports')).json();
+  if (!j.ports.length){ $('log').textContent = '未发现串口。'; return; }
+  $('log').textContent = '可用串口：\n' + j.ports.map(p =>
+    `  ${p.device}  ${p.description}`).join('\n') +
+    '\n（板子关机档 USB 不识别；改完端口后点「生成并上传」）';
+  const usb = j.ports.find(p => !/蓝牙|bluetooth/i.test(p.description));
+  if (usb) $('port').value = usb.device;
+};
+
+function fillSelects(opt){
+  const fontOpts = opt.fonts.map(f =>
+    `<option value="${f.key}">${f.label}</option>`).join('');
+  ['name','role','bio'].forEach(elem => {
+    $(elem + '_font').innerHTML = fontOpts;
+    $(elem + '_size').innerHTML = opt.sizes[elem].map(s =>
+      `<option value="${s}">${s} px</option>`).join('');
+  });
+}
+
+/* ---- 事件绑定 ---- */
+$('uploadBtn').onclick = () => apply(true);
+$('genBtn').onclick = () => apply(false);
+['name','role','bio'].forEach(id => $(id).addEventListener('input', queuePreview));
+['name_font','name_size','role_font','role_size','bio_font','bio_size']
+  .forEach(id => $(id).addEventListener('change', queuePreview));
+
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+  page = b.dataset.page;
+  document.querySelectorAll('.seg button').forEach(x =>
+    x.classList.toggle('on', x === b));
+  preview();
+});
+
+$('avPick').onclick = () => $('avFile').click();
+$('avFile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try{
+    if (!await uploadAsset('avatar', await fileToDataURL(f))) return;
+    AV.img = await loadImg('/api/asset?slot=avatar');
+    setZoom(1); AV.dx = 0; AV.dy = 0;
+    avDraw(); await refreshAssets(); queuePreview();
+  }catch(err){
+    showHints([{level:'err', text:'' + err}]);
+  }finally{
+    e.target.value = '';
+  }
+});
+$('avRemove').onclick = () => clearAssetSlot('avatar');
+
+$('qrSlots').addEventListener('click', e => {
+  const up = e.target.dataset.up, del = e.target.dataset.del;
+  if (up){ pendingSlot = up; $('qrFile').click(); }
+  else if (del){ clearAssetSlot(del); }
+});
+$('qrFile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  const slot = pendingSlot;
+  pendingSlot = null;
+  if (!f || !slot) return;
+  try{
+    if (await uploadAsset(slot, await fileToDataURL(f))) queuePreview();
+  }catch(err){
+    showHints([{level:'err', text:'' + err}]);
+  }finally{
+    e.target.value = '';
+  }
+});
+
+$('splashSlot').addEventListener('click', e => {
+  const up = e.target.dataset.up, del = e.target.dataset.del;
+  if (up){ pendingSlot = up; $('splashFile').click(); }
+  else if (del){ clearAssetSlot(del); }
+});
+$('splashFile').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  const slot = pendingSlot;
+  pendingSlot = null;
+  if (!f || !slot) return;
+  try{
+    if (await uploadAsset(slot, await fileToDataURL(f))) queuePreview();
+  }catch(err){
+    showHints([{level:'err', text:'' + err}]);
+  }finally{
+    e.target.value = '';
+  }
+});
+
+/* ---- 初始化 ---- */
+(async () => {
+  fillSelects(await (await fetch('/api/fonts')).json());
+  const j = await (await fetch('/api/profile')).json();
+  const p = j.profile;
+  $('name').value = p.name;
+  $('role').value = p.role;
+  $('bio').value  = p.bio;
+  ['name','role','bio'].forEach(elem => {
+    $(elem + '_font').value = p[elem + '_font'];
+    $(elem + '_size').value = String(p[elem + '_size']);
+  });
+  $('port').value = j.default_port;
+  setZoom(p.avatar_zoom || 1, false);
+  AV.dx = p.avatar_dx || 0;
+  AV.dy = p.avatar_dy || 0;
+  const assets = await refreshAssets();
+  if (assets.avatar.custom){
+    try{ AV.img = await loadImg('/api/asset?slot=avatar'); }catch(e){ AV.img = null; }
+  }
+  avDraw();
+  preview();
+})();
+</script>
+</body>
+</html>

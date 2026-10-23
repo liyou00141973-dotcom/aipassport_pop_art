@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# 电脑端配置页上传的个人素材，不入库
+tools/assets/
+
+# 系统杂项
+.DS_Store
+Thumbs.db

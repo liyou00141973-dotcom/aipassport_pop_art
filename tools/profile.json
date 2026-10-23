@@ -1,0 +1,14 @@
+{
+  "name": "示例姓名",
+  "role": "示例岗位",
+  "bio": "示例简介，请替换",
+  "name_font": "cn",
+  "name_size": 26,
+  "role_font": "cn",
+  "role_size": 20,
+  "bio_font": "cn",
+  "bio_size": 20,
+  "avatar_zoom": 1.0,
+  "avatar_dx": 0.0,
+  "avatar_dy": 0.0
+}
