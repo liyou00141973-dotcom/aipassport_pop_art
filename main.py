@@ -44,6 +44,7 @@ COLON_MS = 700          # 冒号闪烁半周期
 WAKE_SPLASH_MS = 2000   # 熄屏唤醒时启动图的停留时长，到点自动回首页
 SOC_POLL_MS = 60000     # 电量刷新周期（CW2017 的 SOC 本身变化很慢，60s 足够）
 SOC_FALLBACK = 100      # 电量计不可用时的兜底显示值（保证画面正常，不崩）
+SYNC_RETRY_MS = 300000  # 开机没校上时：空闲状态下每 5 分钟后台重试一次，直到成功
 
 
 def run():
@@ -60,6 +61,8 @@ def run():
         soc = SOC_FALLBACK
 
     timesync.sync()                     # 连 WiFi 取 NTP；失败返回 False，不抛异常
+    # RTC 是否已可信：软复位会保留上次校时结果，此时无需后台重试
+    synced = time.localtime()[0] >= 2020
 
     home.show(lcd=lcd, soc=soc)         # 首页：底板 + 动态块（时间取板端 RTC）
     t = time.localtime()
@@ -78,6 +81,7 @@ def run():
     last_day = t[2]
     next_colon = time.ticks_add(time.ticks_ms(), COLON_MS)
     next_soc = time.ticks_add(time.ticks_ms(), SOC_POLL_MS)
+    next_sync = time.ticks_add(time.ticks_ms(), SYNC_RETRY_MS)
 
     while True:
         now = time.ticks_ms()
@@ -154,6 +158,19 @@ def run():
             want = DIM_PCT
         else:
             want = ON_PCT
+
+        # 开机没校上：在空闲（已变暗/熄屏、用户不在看）时每 5 分钟后台重试，
+        # 直到成功。sync 会阻塞几秒，此时屏已暗，影响最小。
+        if (not synced and idle >= IDLE_DIM_MS
+                and time.ticks_diff(now, next_sync) >= 0):
+            print("后台重试校时…")
+            ok = timesync.sync()
+            next_sync = time.ticks_add(time.ticks_ms(), SYNC_RETRY_MS)
+            if ok:
+                synced = True
+                last_min = -1           # 触发分钟重贴
+                last_day = -1           # 触发日期重贴
+                print("后台校时成功，时钟待刷新")
 
         if want != level:
             if want == ON_PCT and level == OFF_PCT:
