@@ -2,7 +2,7 @@
 #
 # 素材（均由 mp-badge/tools/bake_badge.py 在 PC 端烘焙，板端零解码）：
 #   home.raw     240x320 静态底板：P1 去掉日期文字/时钟/电量数字后整屏渲染
-#   sprites.raw  212 个「不透明精灵块」：会变化的小窗口，整页渲染后裁窗口得到
+#   sprites.raw  223 个「不透明精灵块」：会变化的小窗口，整页渲染后裁窗口得到
 #   sprites.py   精灵块偏移表（SPR / DATE_SLOTS / WEEKDAYS ...）
 #
 # 板端 = 底板整屏画一次，之后只对会变的小窗口做定点 blit 覆盖。

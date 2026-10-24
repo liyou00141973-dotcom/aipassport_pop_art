@@ -38,20 +38,29 @@ HTML_PATH = HERE / "profile_studio.html"
 RENDER_LOCK = threading.Lock()   # 保护 bake_badge 的模块级 NAME/ROLE/BIO
 
 RAW_NAME = "home.raw"
+ANNIV_RAW = "anniv.raw"                               # 板端 anniv.py 读这个文件名
 QR_RAW = {"ding": "qr_ding.raw", "wx": "qr_wx.raw"}   # 板端 qr.py 读这两个文件名
 SPLASH_RAW = "splash.raw"                             # 板端 splash.py 读这个文件名
-DEFAULT_PORT = ""   # 留空：页面首次打开时由「刷新列表」自动探测串口
+DEFAULT_PORT = "COM7"
 UPLOAD_MAX_SIDE = 1600   # 上传图长边超过它就先在 PC 端等比缩小，避免超慢缩放
 
 sys.path.insert(0, str(HERE))
-import bake_badge as B    # noqa: E402  复用渲染管线（含 profile.json 读取）
-import bake_splash as SPL  # noqa: E402  复用启动页中性占位图（无上传图时的回退）
+import bake_badge as B  # noqa: E402  复用渲染管线（含 profile.json 读取）
+
+# 纪念日页（P3）配置：出厂默认值取自烘焙侧常量，配置非法时回退到它
+ANNIV_MODES = ("until", "since")
+ANNIV_LABEL_DEFAULT = B.ANNIV_LABEL
+ANNIV_DATE_DEFAULT = B.ANNIV_DATE
+ANNIV_LABEL_PX = B.ANNIV_SENT_MAX_W   # 顶部句式行总宽上限（事件名过长会被截断）
+
+WIFI_CFG = MPB / "wifi_cfg.py"        # PC 副本 = WiFi 配置真相源，上传即把这份传到板子
+WIFI_MAX_NETS = 8                     # 板端逐个尝试有超时成本，限制候选数量
 
 SPLASH_W, SPLASH_H = B.W, B.H   # 启动页整屏 240x320
 
-# 上传素材槽位：路径与烘焙侧共用，保证「上传即烘焙即上屏」同一份文件
+# 上传素材槽位：路径与烘焙侧 bake_badge 共用，保证「上传即烘焙即上屏」同一份文件
 ASSET_DIR = B.ASSET_DIR
-SPLASH_PNG = ASSET_DIR / "splash.png"   # bake_splash.py 读的就是这个路径
+SPLASH_PNG = ASSET_DIR / "splash.png"   # 用户上传的启动图；未上传时回退工程现有 splash.raw
 ASSETS = {
     "avatar":  {"path": B.AVATAR_PNG,      "label": "头像人像",   "fit": "cover"},
     "qr_ding": {"path": B.QR_PNG["ding"],  "label": "钉钉二维码", "fit": "contain"},
@@ -62,6 +71,8 @@ ASSETS = {
 # 配置页对外开放的字体：排除 "latin"/"time"（日期章/标签/时钟用的内部字体）
 SELECTABLE_FONTS = tuple(k for k in B.FONTS if k not in ("latin", "time"))
 FONT_LABEL = {k: B.FONTS[k]["label"] for k in SELECTABLE_FONTS}
+# 不含中文字形的字体：中文会渲染成空白/方块，页面需提示
+LATIN_ONLY_FONTS = {"impact", "ariblk", "segoeui_b"}
 DEFAULT_FONT = "cn"
 
 # 套用与上屏一致的版面容量的软限制（超出会被裁掉/画到框外，页面给提示）
@@ -69,11 +80,84 @@ NAME_INNER_PX = B.NAME_BOX_INNER_W   # 姓名块内框可用宽（与 bake_home 
 ROLE_INNER_PX = 100   # 岗位条幅基准内容区：116 - 2*2(border) - 2*6(pad_h)
 BIO_WRAP_PX = 102     # 与 bake_home 中 wrap(BIO, ..., 102) 一致
 BIO_TOP, BIO_BOTTOM = 163, 245   # 简介正文首行顶点 / 内容区下缘
+ELEM_LABEL = {"name": "姓名", "role": "角色岗位", "bio": "简介"}
 
 
 # ---------------------------------------------------------------------------
 # profile 读写与校验
 # ---------------------------------------------------------------------------
+
+def _anniv_date_ok(s) -> str | None:
+    """校验目标日期并归一化为固定格式「xxxx年x月x日」，非法返回 None。"""
+    ymd = B.parse_anniv_date(s)
+    if ymd is None:
+        return None
+    return "%d年%d月%d日" % ymd
+
+
+# ---------------------------------------------------------------------------
+# WiFi 配置（wifi_cfg.py）：解析现文件 / 生成新文件
+# ---------------------------------------------------------------------------
+
+_WIFI_TEMPLATE = """# FoloToy AI Passport —— WiFi 连接配置（PC 配置页生成，也可手改）
+#
+# 只填 2.4G 频段的 SSID（ESP32-C3 不支持 5G）。
+# 注意：本文件以明文形式存放在板子 flash 上。
+#
+# 支持配置多个 WiFi：换环境后板子按列表顺序逐个尝试（先连扫描到的在场网络，
+# 不在场的放最后兜底），哪个连上就用哪个校时。按需增删条目即可。
+
+NETS = (
+%s
+)
+"""
+
+
+def parse_wifi_cfg() -> list:
+    """从 PC 副本 wifi_cfg.py 安全解析 NETS（literal_eval，不执行代码）；无则空列表。"""
+    try:
+        import ast
+        tree = ast.parse(WIFI_CFG.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 —— 文件缺失/语法坏 → 视作未配置
+        return []
+    for node in tree.body:
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "NETS"
+                        for t in node.targets)):
+            try:
+                val = ast.literal_eval(node.value)
+                return [[str(s), str(p)] for s, p in val]
+            except Exception:  # noqa: BLE001
+                return []
+    return []
+
+
+def render_wifi_cfg(nets: list) -> str:
+    """把候选列表生成为板端 wifi_cfg.py 文本（repr 转义引号/反斜杠等字符）。"""
+    rows = "\n".join("    (%r, %r)," % (str(s), str(p)) for s, p in nets)
+    return _WIFI_TEMPLATE % rows
+
+
+def clean_wifi_nets(raw) -> list:
+    """校验页面提交的 WiFi 列表：剔除空 SSID、同 SSID 去重、限制数量。"""
+    if not isinstance(raw, list):
+        raise RuntimeError("WiFi 列表格式不对")
+    out: list = []
+    for item in raw:
+        try:
+            s = str(item[0]).strip()
+            p = str(item[1])
+        except Exception:  # noqa: BLE001
+            continue
+        if not s or any(s == r[0] for r in out):
+            continue
+        out.append([s, p])
+        if len(out) >= WIFI_MAX_NETS:
+            break
+    if not out:
+        raise RuntimeError("至少需要配置一个 WiFi（2.4G 频段）")
+    return out
+
 
 def current_profile() -> dict:
     return {"name": B.NAME, "role": B.ROLE, "bio": B.BIO,
@@ -82,7 +166,11 @@ def current_profile() -> dict:
             "bio_font": B.BIO_FONT, "bio_size": B.BIO_SIZE,
             "avatar_zoom": float(B.AVATAR_ZOOM),
             "avatar_dx": float(B.AVATAR_DX),
-            "avatar_dy": float(B.AVATAR_DY)}
+            "avatar_dy": float(B.AVATAR_DY),
+            "anniv_label": B.ANNIV_LABEL,
+            "anniv_date": B.ANNIV_DATE,
+            "anniv_mode": B.ANNIV_MODE,
+            "wifi": parse_wifi_cfg()}
 
 
 def set_profile(p: dict) -> None:
@@ -93,6 +181,10 @@ def set_profile(p: dict) -> None:
     B.AVATAR_ZOOM = float(p.get("avatar_zoom", 1.0))
     B.AVATAR_DX = float(p.get("avatar_dx", 0.0))
     B.AVATAR_DY = float(p.get("avatar_dy", 0.0))
+    # 纪念日页：非法值一律回退默认，保证烘焙永远拿到合法配置（页面侧由 measure 报错拦截）
+    B.ANNIV_LABEL = p.get("anniv_label") or ANNIV_LABEL_DEFAULT
+    B.ANNIV_MODE = p.get("anniv_mode") if p.get("anniv_mode") in ANNIV_MODES else "until"
+    B.ANNIV_DATE = _anniv_date_ok(p.get("anniv_date")) or ANNIV_DATE_DEFAULT
 
 
 def clean_profile(body: dict) -> dict:
@@ -124,6 +216,12 @@ def clean_profile(body: dict) -> dict:
             out[k] = float(body.get(k, 0.0))
         except (TypeError, ValueError):
             out[k] = 0.0
+    # 纪念日页：标签空串回退默认；模式白名单；日期合法则归一化、非法保留原串待 measure 报错
+    out["anniv_label"] = str(body.get("anniv_label") or "").strip() or ANNIV_LABEL_DEFAULT
+    out["anniv_mode"] = (body.get("anniv_mode") if body.get("anniv_mode") in ANNIV_MODES
+                         else "until")
+    out["anniv_date"] = _anniv_date_ok(body.get("anniv_date")) or str(
+        body.get("anniv_date") or "").strip()
     return out
 
 
@@ -163,11 +261,29 @@ def measure(p: dict) -> tuple[dict, list[dict]]:
                       "简介排成 %d 行，超过旁白框 %d 行容量（当前字号行距 %d px），"
                       "后面的行会画到框外；建议缩小字号或精简文案"
                       % (len(lines), bio_max, step)})
+    for elem in ("name", "role", "bio"):
+        if p[elem] and p[elem + "_font"] in LATIN_ONLY_FONTS:
+            hints.append({"level": "warn", "text":
+                          "%s 用的是 %s（纯拉丁字体），其中的中文会渲染成空白/方块，"
+                          "中文请改用思源黑体/微软雅黑/Noto Sans SC"
+                          % (ELEM_LABEL[elem], FONT_LABEL[p[elem + "_font"]])})
+    # 纪念日页（P3）：日期非法无法烘焙，直接拦截；事件名过长会被截断，给软提示
+    if _anniv_date_ok(p.get("anniv_date")) is None:
+        hints.append({"level": "err", "text":
+                      "纪念日日期格式不对，应为 xxxx年x月x日（例如 2024年10月20日）"})
+    label = p.get("anniv_label") or ""
+    pre, suf = B.ANNIV_CAP[B.ANNIV_MODE]
+    sent = "%s%s%s" % (pre, label, suf)
+    alw = B.text_w(sent, B.F("cn", 20))
+    if alw > ANNIV_LABEL_PX:
+        hints.append({"level": "warn", "text":
+                      "「%s」句子过宽（%.0f px > 可用 %.0f px），事件名会被截断；"
+                      "建议精简（如「相识」「毕业」「上一次旅行」）" % (sent, alw, ANNIV_LABEL_PX)})
     if not hints:
         hints.append({"level": "ok", "text": "文案与字体合适，可直接生成"})
     return {"name_w": round(nw, 1), "name_ls": nls, "role_w": round(rw, 1),
             "bio_lines": len(lines), "bio_max_lines": bio_max,
-            "bio_line_h": step}, hints
+            "bio_line_h": step, "anniv_label_w": round(alw, 1)}, hints
 
 
 def font_options() -> dict:
@@ -185,11 +301,13 @@ def font_options() -> dict:
 # 渲染
 # ---------------------------------------------------------------------------
 
-def render_full(p: dict):
-    """P1 整页（含时钟/日期/电量），用于预览。"""
+def render_full(p: dict, hour: int | None = None):
+    """P1 整页（含时钟/日期/电量），用于预览。hour 指定预览时钟。"""
     with RENDER_LOCK:                 # bake_badge 的 NAME/ROLE/BIO 是模块级全局，
         set_profile(p)                # 预览（HTTP 线程）与生成（工作线程）必须串行
-        return B.bake_home()
+        if hour is None:
+            return B.bake_home()
+        return B.bake_home(hh="%02d" % (int(hour) % 24))
 
 
 def render_base(p: dict):
@@ -199,17 +317,38 @@ def render_base(p: dict):
         return B.bake_home(dynamic=False, bar=False)
 
 
-def render_qr(p: dict, sel: int):
-    """P2 二维码页静态底板：sel 0=钉钉 1=微信（上传图会等比缩放进 174x174 白框）。"""
+def render_qr(p: dict, sel: int, full: bool = False):
+    """P2 二维码页：full=True 整页（含电量，页面预览用）；默认静态底板（上传用）。"""
     with RENDER_LOCK:
         set_profile(p)
-        return B.bake_qr(sel=sel)
+        return B.bake_qr(sel=sel, dynamic=full)
+
+
+def render_anniv(p: dict, full: bool = True):
+    """P3 纪念日倒计时页。
+
+    full=True  → 整页（含倒计时数字与电量百分比），用于页面预览；
+    full=False → 静态底板（板端上屏那一张，数字由 num_* 精灵块覆盖）。
+    天数按 p 的目标日期与模式现算（bake_anniv 内部读 ANNIV_DATE/ANNIV_MODE）。
+    """
+    with RENDER_LOCK:
+        set_profile(p)
+        return B.bake_anniv(dynamic=full)
+
+
+def _current_splash():
+    """工程现有的 splash.raw（RGB565 大端）解回 RGB 图，作为未上传启动图时的回退来源。"""
+    raw = (MPB / SPLASH_RAW).read_bytes()
+    swapped = bytearray(len(raw))
+    swapped[0::2], swapped[1::2] = raw[1::2], raw[0::2]   # 大端 → 小端
+    return B.Image.frombytes("RGB", (SPLASH_W, SPLASH_H), bytes(swapped),
+                             "raw", "BGR;16")
 
 
 def render_splash():
-    """启动页整屏 240x320：有上传图就 cover 铺满并居中裁切（不留白），否则用中性占位图。"""
+    """启动页整屏 240x320：有上传图就 cover 铺满并居中裁切（不留白），否则沿用工程现有启动图。"""
     src = (B.Image.open(SPLASH_PNG).convert("RGB") if SPLASH_PNG.is_file()
-           else SPL.placeholder())
+           else _current_splash())
     sw, sh = src.size
     s = max(SPLASH_W / sw, SPLASH_H / sh)          # cover：铺满整屏，多余裁掉
     nw, nh = max(SPLASH_W, round(sw * s)), max(SPLASH_H, round(sh * s))
@@ -317,15 +456,18 @@ def worker_loop() -> None:
                 JOB["running"] = False
 
 
-def run_mpremote(port: str, files: list) -> None:
+def run_mpremote(port: str, files: list, exec_cmd: str | None = None) -> None:
     """把 files=[(本地路径, 板端文件名)] 逐个写进板子，最后软复位让 main.py 重新跑。
 
+    exec_cmd 非空时在传文件后、复位前先执行一段板端代码（如立即校时验证）。
     mpremote 进 raw REPL 时会打断板端主循环，因此必须跟一条 soft-reset，
     否则板子停在 REPL 上、屏幕不动。多条命令之间用 "+" 分隔（mpremote 的命令终止符）。
     """
     cmd = [sys.executable, "-m", "mpremote", "connect", port]
     for src, dest in files:
         cmd += ["fs", "cp", str(src), ":" + dest, "+"]
+    if exec_cmd:
+        cmd += ["exec", exec_cmd, "+"]
     cmd += ["soft-reset"]
     job_log("执行：" + " ".join(cmd))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -345,6 +487,18 @@ def run_mpremote(port: str, files: list) -> None:
             % len(files))
 
 
+def do_wifi(nets: list, port: str, sync_now: bool) -> None:
+    """生成 wifi_cfg.py（PC 副本）→ 上传板子 → 可选立即校时验证（日志可见结果）。"""
+    WIFI_CFG.write_text(render_wifi_cfg(nets), encoding="utf-8", newline="\n")
+    job_log("已生成 %s（%d 个候选网络：%s）"
+            % (WIFI_CFG, len(nets), "、".join(n[0] for n in nets)))
+    exec_cmd = ("import timesync; print('sync ->', timesync.sync())"
+                if sync_now else None)
+    if sync_now:
+        job_log("上传后立即校时验证（约 10-40s，取决于网络）…")
+    run_mpremote(port, [(WIFI_CFG, "wifi_cfg.py")], exec_cmd=exec_cmd)
+
+
 def do_apply(p: dict, upload: bool, port: str) -> None:
     save_profile_json(p)
     job_log("配置已存到 %s" % PROFILE_JSON)
@@ -357,7 +511,7 @@ def do_apply(p: dict, upload: bool, port: str) -> None:
             % (GEN / RAW_NAME, len(raw), GEN / "home.png"))
     outs = [(GEN / RAW_NAME, RAW_NAME)]
     for sel, tag in ((0, "ding"), (1, "wx")):     # 二维码页也一并重烘焙（含上传图）
-        qraw = B.to_rgb565_be(render_qr(p, sel))
+        qraw = B.to_rgb565_be(render_qr(p, sel, full=False))
         (GEN / QR_RAW[tag]).write_bytes(qraw)
         outs.append((GEN / QR_RAW[tag], QR_RAW[tag]))
         job_log("已生成 %s（%d B）" % (GEN / QR_RAW[tag], len(qraw)))
@@ -365,6 +519,29 @@ def do_apply(p: dict, upload: bool, port: str) -> None:
     (GEN / SPLASH_RAW).write_bytes(sraw)
     outs.append((GEN / SPLASH_RAW, SPLASH_RAW))
     job_log("已生成 %s（%d B）" % (GEN / SPLASH_RAW, len(sraw)))
+    # 纪念日页静态底板：底色 + 面板 + 标签（数字由 num_* 精灵块覆盖，电量复用 bat_*）
+    araw = B.to_rgb565_be(render_anniv(p, full=False))
+    (GEN / ANNIV_RAW).write_bytes(araw)
+    outs.append((GEN / ANNIV_RAW, ANNIV_RAW))
+    job_log("已生成 %s（%d B）" % (GEN / ANNIV_RAW, len(araw)))
+    # 板端 anniv.py 的「目标日期 / 语义模式」读自 sprites.py 常量 → 配置改了必须同步重生成
+    # 并上传 sprites.py；sprites.raw 与配置无关（num_*/bat_* 均为固定烘焙），内容一致就不重传。
+    with RENDER_LOCK:
+        set_profile(p)
+        spayload, stable = B.pack(B.build_sprites())
+    (HERE / "sprites.py").write_text(B.write_sprites_py(stable),
+                                     encoding="utf-8", newline="\n")
+    outs.append((HERE / "sprites.py", "sprites.py"))
+    job_log("已重生成 tools/sprites.py（%d 条偏移，ANNIV_DATE=%s / MODE=%s）"
+            % (len(stable), B.ANNIV_DATE, B.ANNIV_MODE))
+    raw_path = GEN / "sprites.raw"
+    same = raw_path.is_file() and raw_path.read_bytes() == spayload
+    if not same:
+        raw_path.write_bytes(spayload)
+        outs.append((raw_path, "sprites.raw"))
+        job_log("sprites.raw 与磁盘不一致，已重生成并加入上传列表（%d B）" % len(spayload))
+    else:
+        job_log("sprites.raw 与磁盘逐字节一致，无需重传（%d B）" % len(spayload))
     if upload:
         run_mpremote(port, outs)
 
@@ -449,10 +626,16 @@ class Handler(BaseHTTPRequestHandler):
                     img = render_qr(p, 1)
                 elif page == "qr_ding":
                     img = render_qr(p, 0)
+                elif page == "anniv":
+                    img = render_anniv(p)
                 elif page == "splash":
                     img = render_splash()
                 else:
-                    img = render_full(p)
+                    try:
+                        hour = int(body["hour"])
+                    except (KeyError, TypeError, ValueError):
+                        hour = None
+                    img = render_full(p, hour)
                 metrics, hints = measure(p)
                 self._json({"ok": True, "image": png_dataurl(img),
                             "metrics": metrics, "hints": hints})
@@ -469,6 +652,15 @@ class Handler(BaseHTTPRequestHandler):
                 TASKQ.put(("生成并上传到 " + port if upload else "生成 home.raw",
                            lambda: do_apply(p, upload, port)))
                 self._json({"ok": True, "hints": hints})
+            elif self.path == "/api/wifi":
+                nets = clean_wifi_nets(body.get("nets"))
+                port = str(body.get("port") or DEFAULT_PORT).strip()
+                if not port:
+                    raise RuntimeError("未指定串口")
+                sync_now = bool(body.get("sync", True))
+                TASKQ.put(("WiFi 配置上传到 " + port,
+                           lambda: do_wifi(nets, port, sync_now)))
+                self._json({"ok": True})
             elif self.path == "/api/upload":
                 slot = str(body.get("slot") or "")
                 if slot not in ASSETS:

@@ -91,7 +91,7 @@
 <body>
 <header>
   <h1>PASSPORT 工牌配置</h1>
-  <span>文案/字体/字号 + 头像人像 + 微信·钉钉二维码 + 启动页图片 → 实时预览 → 一键生成并上传（不重刷固件）</span>
+  <span>文案/字体/字号 + 纪念日倒计时 + 头像人像 + 微信·钉钉二维码 + 启动页图片 → 实时预览 → 一键生成并上传（不重刷固件）</span>
 </header>
 
 <main>
@@ -100,21 +100,21 @@
       <h2>工牌内容</h2>
 
       <label>姓名 <small>居中大字；字距会按姓名框宽度自动收紧，不再溢出</small></label>
-      <input id="name" maxlength="24" placeholder="示例姓名">
+      <input id="name" maxlength="24" placeholder="你的名字">
       <div class="ctl">
         <div><span>字体</span><select id="name_font"></select></div>
         <div class="sz"><span>字号</span><select id="name_size"></select></div>
       </div>
 
       <label>角色岗位 <small>红底白字条幅（过长会自动加宽）</small></label>
-      <input id="role" maxlength="24" placeholder="示例岗位">
+      <input id="role" maxlength="24" placeholder="你的岗位">
       <div class="ctl">
         <div><span>字体</span><select id="role_font"></select></div>
         <div class="sz"><span>字号</span><select id="role_size"></select></div>
       </div>
 
       <label>简介 <small>旁白框正文，行数受字号影响</small></label>
-      <textarea id="bio" maxlength="60" placeholder="示例简介，请替换"></textarea>
+      <textarea id="bio" maxlength="60" placeholder="一句话介绍自己"></textarea>
       <div class="ctl">
         <div><span>字体</span><select id="bio_font"></select></div>
         <div class="sz"><span>字号</span><select id="bio_size"></select></div>
@@ -122,6 +122,24 @@
 
       <div class="hints" id="hints"></div>
       <div class="metrics" id="metrics"></div>
+    </div>
+
+    <div class="card">
+      <h2>纪念日倒计时页（P3）</h2>
+      <p style="margin:0;color:var(--muted);font-size:12px">
+        事件名可自由填写，如「相识」「毕业」「上一次旅行」「离职」；日期固定写成 xxxx年x月x日。
+        页面顶部显示整句「距 相识 还有 …」/「自 相识 以来已 …」（事件名黄底小块），黑色表盘显示天数，
+        表盘下方一行显示「相识：2024年1月2日」。改完点「生成并上传」即生效（会一并更新板端日期常量）。
+      </p>
+      <label>事件名 <small>嵌在顶部句子里（黄底小块）；过长会被截断</small></label>
+      <input id="anniv_label" maxlength="12" placeholder="相识">
+      <label>目标日期 <small>固定格式：xxxx年x月x日</small></label>
+      <input type="text" id="anniv_date" placeholder="2024年10月20日" autocomplete="off">
+      <label>语义模式</label>
+      <select id="anniv_mode">
+        <option value="until">距 XXX 还有 N 天（目标日在未来）</option>
+        <option value="since">自 XXX 以来已 N 天（目标日已过去）</option>
+      </select>
     </div>
 
     <div class="card">
@@ -166,10 +184,27 @@
       <h2>启动页图片</h2>
       <p style="margin:0;color:var(--muted);font-size:12px">
         开机与熄屏唤醒时整屏显示的启动图。上传后按 cover 铺满 240×320（超出部分居中裁掉，不留白边）。
-        未上传时板子显示中性占位启动图。
+        未上传时板子沿用工程现有的启动图。
       </p>
       <div id="splashSlot"></div>
       <input type="file" id="splashFile" accept="image/*">
+    </div>
+
+    <div class="card">
+      <h2>WiFi 配置</h2>
+      <p style="margin:0;color:var(--muted);font-size:12px">
+        板子开机按顺序连这些 WiFi 校时（自动先连扫描到的在场网络，其余兜底）。
+        只支持 2.4G 频段；SSID 区分大小写和空格（如「MyWiFi」≠「mywifi」）。
+        密码以明文存放在板子 flash 上。
+      </p>
+      <div id="wifiRows"></div>
+      <div class="row" style="align-items:center">
+        <button class="flat" id="wifiAdd">+ 添加网络</button>
+        <label style="margin:0;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="wifiSync" checked> 上传后立即校时验证
+        </label>
+        <button class="primary" id="wifiUpload">保存并上传到板子</button>
+      </div>
     </div>
 
     <div class="card">
@@ -177,7 +212,7 @@
       <div class="row" style="margin-top:0">
         <div class="grow">
           <label style="margin-top:0">串口</label>
-          <input id="port" value="">
+          <input id="port" value="COM7">
         </div>
         <button class="flat" id="portsBtn">刷新列表</button>
         <button class="primary" id="uploadBtn">生成并上传到板子</button>
@@ -191,12 +226,13 @@
     <h2>实时预览</h2>
     <div class="seg">
       <button data-page="home" class="on">P1 首页</button>
+      <button data-page="anniv">P3 纪念日</button>
       <button data-page="splash">启动页</button>
       <button data-page="qr_ding">P2 钉钉码</button>
       <button data-page="qr_wx">P2 微信码</button>
     </div>
     <img id="preview" alt="预览">
-    <p>与板子同一套渲染代码，逐像素一致。<br>改文案/字体/字号/头像/二维码，板端 .py 与精灵块都不用动，只换 raw 文件。</p>
+    <p>与板子同一套渲染代码，逐像素一致。<br>改文案/字体/字号/头像/二维码/启动图只换 raw 文件；改纪念日日期还会同步更新板端常量与精灵块。</p>
   </div>
 </main>
 
@@ -217,6 +253,8 @@ function collect(){
           name_font:$('name_font').value, name_size:+$('name_size').value,
           role_font:$('role_font').value, role_size:+$('role_size').value,
           bio_font:$('bio_font').value, bio_size:+$('bio_size').value,
+          anniv_label:$('anniv_label').value, anniv_date:$('anniv_date').value,
+          anniv_mode:$('anniv_mode').value,
           avatar_zoom:+AV.zoom.toFixed(4), avatar_dx:+AV.dx.toFixed(2), avatar_dy:+AV.dy.toFixed(2)};
 }
 
@@ -240,7 +278,8 @@ async function preview(){
       const m = j.metrics;
       $('metrics').textContent =
         `姓名宽 ${m.name_w}px（自适应字距 ${m.name_ls}px） / 岗位宽 ${m.role_w}px / ` +
-        `简介 ${m.bio_lines} 行（上限 ${m.bio_max_lines} 行，行距 ${m.bio_line_h}px）`;
+        `简介 ${m.bio_lines} 行（上限 ${m.bio_max_lines} 行，行距 ${m.bio_line_h}px） / ` +
+        `事件名宽 ${m.anniv_label_w}px`;
     }else{
       showHints([{level:'err', text:j.error}]);
     }
@@ -374,7 +413,7 @@ function renderSplashSlot(assets){
   const thumb = a.custom ? `<img src="${a.thumb}" alt="">` : `<div class="ph"></div>`;
   const meta = a.custom
     ? `已上传 ${a.width}×${a.height}px，将 cover 铺满 240×320（多余裁掉）`
-    : '未上传，开机显示中性占位启动图';
+    : '未上传，开机沿用工程现有的启动图';
   const del = a.custom ? `<button class="flat" data-del="splash">删除</button>` : '';
   $('splashSlot').innerHTML = `<div class="slot tall">${thumb}
     <div class="meta"><b>启动页图片</b>${meta}</div>
@@ -419,6 +458,58 @@ async function clearAssetSlot(slot){
   queuePreview();
 }
 
+/* ---- WiFi 配置：多网络增删 + 上传 ---- */
+function wifiRow(ssid, pwd){
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.style.marginBottom = '6px';
+  div.innerHTML =
+    `<input class="w-ssid" placeholder="WiFi 名称（区分大小写）" style="flex:1.2">` +
+    `<input class="w-pwd" placeholder="密码" style="flex:1">` +
+    `<button class="flat w-del">删除</button>`;
+  div.querySelector('.w-ssid').value = ssid || '';
+  div.querySelector('.w-pwd').value = pwd || '';
+  return div;
+}
+
+function renderWifiRows(nets){
+  const box = $('wifiRows');
+  box.innerHTML = '';
+  (nets && nets.length ? nets : [['', '']]).forEach(n =>
+    box.appendChild(wifiRow(n[0], n[1])));
+}
+
+function wifiCollect(){
+  return [...$('wifiRows').querySelectorAll('.row')].map(r => [
+    r.querySelector('.w-ssid').value.trim(),
+    r.querySelector('.w-pwd').value]);
+}
+
+async function wifiUpload(){
+  const body = {nets: wifiCollect(), port: $('port').value.trim(),
+                sync: $('wifiSync').checked};
+  try{
+    const r = await fetch('/api/wifi', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j = await r.json();
+    if (!j.ok){ $('log').textContent = j.error; return; }
+    setBusy(true);
+    $('log').textContent = '已提交，等待执行…';
+    if (!logTimer) logTimer = setInterval(pollJob, 700);
+  }catch(e){
+    $('log').textContent = '提交失败：' + e;
+  }
+}
+
+$('wifiAdd').onclick = () => $('wifiRows').appendChild(wifiRow('', ''));
+$('wifiUpload').onclick = wifiUpload;
+$('wifiRows').addEventListener('click', e => {
+  if (e.target.classList.contains('w-del')){
+    if ($('wifiRows').children.length > 1) e.target.closest('.row').remove();
+    else e.target.closest('.row').querySelectorAll('input').forEach(i => i.value = '');
+  }
+});
+
 /* ---- 串口 + 生成 ---- */
 let logTimer = null;
 async function pollJob(){
@@ -438,6 +529,7 @@ async function pollJob(){
 function setBusy(on){
   $('uploadBtn').disabled = on;
   $('genBtn').disabled = on;
+  $('wifiUpload').disabled = on;
 }
 
 async function apply(upload){
@@ -481,8 +573,8 @@ function fillSelects(opt){
 /* ---- 事件绑定 ---- */
 $('uploadBtn').onclick = () => apply(true);
 $('genBtn').onclick = () => apply(false);
-['name','role','bio'].forEach(id => $(id).addEventListener('input', queuePreview));
-['name_font','name_size','role_font','role_size','bio_font','bio_size']
+['name','role','bio','anniv_label','anniv_date'].forEach(id => $(id).addEventListener('input', queuePreview));
+['name_font','name_size','role_font','role_size','bio_font','bio_size','anniv_mode']
   .forEach(id => $(id).addEventListener('change', queuePreview));
 
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
@@ -560,6 +652,10 @@ $('splashFile').addEventListener('change', async e => {
     $(elem + '_size').value = String(p[elem + '_size']);
   });
   $('port').value = j.default_port;
+  $('anniv_label').value = p.anniv_label || '';
+  $('anniv_date').value = p.anniv_date || '';
+  $('anniv_mode').value = p.anniv_mode || 'until';
+  renderWifiRows(p.wifi);
   setZoom(p.avatar_zoom || 1, false);
   AV.dx = p.avatar_dx || 0;
   AV.dy = p.avatar_dy || 0;

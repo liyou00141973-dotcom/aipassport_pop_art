@@ -44,27 +44,31 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 # --- 路径 ---------------------------------------------------------------------
 TOOLS = Path(__file__).resolve().parent
-MPB = TOOLS.parent                                   # mp-badge-clean/
+MPB = TOOLS.parent                                   # mp-badge/
+VENDOR = TOOLS / "vendor"                            # 出厂素材与开源字体（随仓库分发）
+IMG_DIR = VENDOR / "images"                          # 角色 / 网点 / 占位二维码（LVGL .c）
 OUT_DIR = MPB / "generated"
 
-# 本工程完全自包含：出厂素材与开源字体随工程一起走，不依赖任何外部仓库。
-VENDOR = TOOLS / "vendor"
-IMG_DIR = VENDOR / "images"                          # 出厂素材（角色图 / 网点 / 占位二维码 .c）
-FONT_SRC = VENDOR / "fonts"                          # 开源字体（思源黑体 / Bangers）
+SHS = VENDOR / "fonts" / "SourceHanSansCN-Bold.otf"  # 中文字：思源黑体 Bold（OFL）
+BANGERS = VENDOR / "fonts" / "Bangers-Regular.ttf"   # 拉丁/数字：Bangers 漫画体（OFL）
 
-SHS = FONT_SRC / "SourceHanSansCN-Bold.otf"          # 中文字：思源黑体 Bold
-BANGERS = FONT_SRC / "Bangers-Regular.ttf"           # 拉丁/数字：Bangers 漫画体
-
-# 配置页可选的字体（全部随工程自带，工具自包含，不依赖系统字体目录）。
-# 仅收录**开源授权**字体，规避公开发布的字体授权风险。
+# 配置页可选的字体：只在字体文件实际存在时才暴露（仓库仅分发开源字体；
+# 本地放入其它字体文件即可在配置页选用，缺省不影响烘焙）。
 # "cn"/"latin"/"time" 是页面固定元素（日期章/标签/时钟）用的内部字体，不对外开放。
 FONT_DIR = TOOLS / "fonts"
 FONTS = {
-    "cn":      {"file": SHS,                            "label": "思源黑体 Bold（默认）"},
-    "latin":   {"file": BANGERS,                        "label": "Bangers（默认数字/拉丁）"},
-    "time":    {"file": BANGERS,                        "label": "Bangers"},
-    "noto_sc": {"file": FONT_DIR / "NotoSansSC-VF.ttf", "label": "Noto Sans SC"},
+    "cn":        {"file": SHS,                            "label": "思源黑体 Bold（默认）"},
+    "latin":     {"file": BANGERS,                        "label": "Bangers（默认数字/拉丁）"},
+    "time":      {"file": BANGERS,                        "label": "Bangers"},
+    "yahei_b":   {"file": FONT_DIR / "msyhbd.ttc",        "label": "微软雅黑 Bold"},
+    "yahei":     {"file": FONT_DIR / "msyh.ttc",          "label": "微软雅黑"},
+    "yahei_l":   {"file": FONT_DIR / "msyhl.ttc",         "label": "微软雅黑 Light"},
+    "noto_sc":   {"file": FONT_DIR / "NotoSansSC-VF.ttf", "label": "Noto Sans SC"},
+    "impact":    {"file": FONT_DIR / "impact.ttf",        "label": "Impact"},
+    "ariblk":    {"file": FONT_DIR / "ariblk.ttf",        "label": "Arial Black"},
+    "segoeui_b": {"file": FONT_DIR / "segoeuib.ttf",      "label": "Segoe UI Bold"},
 }
+FONTS = {k: v for k, v in FONTS.items() if Path(v["file"]).is_file()}
 
 # 用户上传素材（头像 / 二维码）：只在 PC 端 tools/assets/ 存在，不占板子 Flash。
 # 文件缺失 → 一律回退出厂内置图（保证默认烘焙零回归）。
@@ -79,19 +83,29 @@ ELEM_SIZES = {
     "bio": (14, 16, 18, 20, 22),
 }
 
-# --- 画布与色板（badge_theme.h） ----------------------------------------------
+# --- 画布与主题色板（badge_theme.h） ------------------------------------------
 W, H = 240, 320
-PAPER = (0xFF, 0xFD, 0xE8)      # BADGE_PAPER
-PAPER_POP = (0xFF, 0xFD, 0xF0)  # BADGE_PAPER_POP
-INK = (0x11, 0x11, 0x11)        # BADGE_INK
-HILITE = (0xFF, 0xE6, 0x00)     # BADGE_HIGHLIGHT
-RED = (0xFF, 0x2A, 0x55)        # BADGE_RED
-CYAN = (0x00, 0xE5, 0xFF)       # BADGE_SCAN_CYAN
-WGREEN = (0x00, 0xC8, 0x53)     # BADGE_WECHAT_GREEN
-GRAY = (0x88, 0x88, 0x88)       # BADGE_GRAY
-WHITE = (0xFF, 0xFF, 0xFF)      # BADGE_PANEL_WHITE
-BATT_GREEN = (0x00, 0xC8, 0x53)
-BATT_AMBER = (0xFF, 0xA0, 0x00)
+
+# 主题皮肤 = 一组颜色。默认 "default" 即出厂漫画风，是零回归基线；
+# 后续出主题皮肤包时，只要往 SKINS 里加一项，并让调用方传 load_skin("<名字>")，
+# 所有绘制函数读到的仍是同一批模块级全局色常量，无需改动各自代码。
+SKINS = {
+    "default": {
+        "label": "出厂漫画风",
+        "paper": (0xFF, 0xFD, 0xE8),      # BADGE_PAPER
+        "paper_pop": (0xFF, 0xFD, 0xF0),  # BADGE_PAPER_POP
+        "ink": (0x11, 0x11, 0x11),        # BADGE_INK
+        "hilite": (0xFF, 0xE6, 0x00),     # BADGE_HIGHLIGHT
+        "red": (0xFF, 0x2A, 0x55),        # BADGE_RED
+        "cyan": (0x00, 0xE5, 0xFF),       # BADGE_SCAN_CYAN
+        "wgreen": (0x00, 0xC8, 0x53),     # BADGE_WECHAT_GREEN
+        "gray": (0x88, 0x88, 0x88),       # BADGE_GRAY
+        "white": (0xFF, 0xFF, 0xFF),      # BADGE_PANEL_WHITE
+        "batt_green": (0x00, 0xC8, 0x53),
+        "batt_amber": (0xFF, 0xA0, 0x00),
+    },
+}
+SKIN_NAME = "default"
 
 
 def blend_over(fg, bg, alpha: float):
@@ -102,8 +116,26 @@ def blend_over(fg, bg, alpha: float):
 # 冒号闪烁暗态：LVGL 把整层降到 LV_OPA_30 叠在 INK 上，
 # 颜色混合是线性的 → 等价于用预混色以不透明方式画在 INK 背景上。
 COLON_OPA_DIM = 0.30
-COL_OFF_FG = blend_over(HILITE, INK, COLON_OPA_DIM)   # 暗态字
-COL_OFF_SH = blend_over(RED, INK, COLON_OPA_DIM)      # 暗态错位阴影
+
+
+def load_skin(name: str = SKIN_NAME) -> None:
+    """把一套皮肤的颜色装进模块级全局色常量（本次烘焙的所有绘制函数都读它们）。
+
+    注意：COL_OFF_FG / COL_OFF_SH 依赖当前色板，必须在换色板后重算，
+    所以它们不写死在模块顶层，而是随 load_skin() 一起派生。
+    """
+    global PAPER, PAPER_POP, INK, HILITE, RED, CYAN, WGREEN, GRAY, WHITE
+    global BATT_GREEN, BATT_AMBER, COL_OFF_FG, COL_OFF_SH
+    s = SKINS[name]
+    PAPER, PAPER_POP = s["paper"], s["paper_pop"]
+    INK, HILITE, RED = s["ink"], s["hilite"], s["red"]
+    CYAN, WGREEN, GRAY, WHITE = s["cyan"], s["wgreen"], s["gray"], s["white"]
+    BATT_GREEN, BATT_AMBER = s["batt_green"], s["batt_amber"]
+    COL_OFF_FG = blend_over(HILITE, INK, COLON_OPA_DIM)   # 暗态字
+    COL_OFF_SH = blend_over(RED, INK, COLON_OPA_DIM)      # 暗态错位阴影
+
+
+load_skin()
 
 # --- 工牌内容（badge_profile.h / badge_text.h） --------------------------------
 # 下面三个是出厂默认值；若 tools/profile.json 存在（由 tools/profile_studio.py 写入），
@@ -123,7 +155,29 @@ AVATAR_ZOOM = 1.0
 AVATAR_DX = 0.0
 AVATAR_DY = 0.0
 
+# 纪念日倒计时页（P3）的目标日期与语义：
+#   anniv_mode="until" -> 距离目标日还有几天（当天=0，过期后恒 0）
+#   anniv_mode="since" -> 从目标日起已是第几天（当天=1）
+# 下面三个是出厂占位值，仅为让页面可烘焙；真实值由 tools/profile.json 覆盖。
+# 日期对外统一用固定格式「xxxx年x月x日」（解析时兼容 xxxx-x-x 写法）。
+ANNIV_LABEL = "纪念日"
+ANNIV_DATE = "2024年10月20日"
+ANNIV_MODE = "until"
+
 PROFILE_JSON = TOOLS / "profile.json"
+
+
+def parse_anniv_date(s) -> tuple | None:
+    """把「2024年10月20日」或「2024-10-20」解析为 (y, m, d)；非法返回 None。"""
+    try:
+        t = str(s or "").strip()
+        for ch in ("年", "月", "日", "/"):
+            t = t.replace(ch, "-")
+        y, m, d = (int(v) for v in t.rstrip("-").split("-"))
+        datetime.date(y, m, d)              # 合法性检查（含闰年/月长）
+    except (TypeError, ValueError):
+        return None
+    return (y, m, d)
 
 
 def load_profile() -> None:
@@ -131,6 +185,7 @@ def load_profile() -> None:
     global NAME, ROLE, BIO
     global NAME_FONT, NAME_SIZE, ROLE_FONT, ROLE_SIZE, BIO_FONT, BIO_SIZE
     global AVATAR_ZOOM, AVATAR_DX, AVATAR_DY
+    global ANNIV_LABEL, ANNIV_DATE, ANNIV_MODE
     if not PROFILE_JSON.is_file():
         return
     import json
@@ -156,13 +211,21 @@ def load_profile() -> None:
         AVATAR_DY = float(p.get("avatar_dy", AVATAR_DY))
     except (TypeError, ValueError):
         pass
+    ANNIV_LABEL = str(p.get("anniv_label", ANNIV_LABEL))
+    # mode 白名单用字面量校验（ANNIV_CAP 定义在本函数调用之后，此处不可引用）
+    ANNIV_MODE = p.get("anniv_mode", ANNIV_MODE)
+    if ANNIV_MODE not in ("until", "since"):
+        ANNIV_MODE = "until"
+    ad = p.get("anniv_date", ANNIV_DATE)
+    ymd = parse_anniv_date(ad)
+    if ymd is not None:
+        ANNIV_DATE = "%d年%d月%d日" % ymd       # 统一归一化为对外固定格式
 
 
 load_profile()
 
 TAG_HOME = "HERO // 01"
 SFX = "BOOM!"
-CAP_HEADER = "PROFILE // EPISODE 01"
 NAME_HEADER = "NAME"
 KEY_OK = "OK"
 OK_ACTION = "加好友"
@@ -176,6 +239,14 @@ QR_BADGE = "SCAN!"
 TAB_NAMES = ("钉钉", "微信")
 KEY_SWITCH = "UP/DN"
 KEY_BACK = "LONG OK"
+
+# --- P3 纪念日倒计时页文案 ------------------------------------------------
+TAG_ANNIV = "ANNIV // 03"
+TAG_DDAY = "D-DAY"
+ANNIV_UNIT = "天"
+ANNIV_CAP = {"until": ("距", "还有"), "since": ("自", "以来已")}
+# 句式：距{name}还有 [N] 天 / 自{name}以来已 [N] 天（[N] 即表盘数字）
+ANNIV_OFF = (0x4A, 0x42, 0x18)        # 前导空位「熄灭段」暗黄（黑窗上的占位 0）
 
 # --- 字库行高（取自 assets/fonts/*.c 的 .line_height，与 LVGL 排版一致） -------
 LINE_H = {
@@ -564,12 +635,10 @@ def bake_home(soc: int = 86, *, hh: str = "10", mm: str = "24", date_text: str |
     # 旁白简介框 (114,135) 116x119（白底墨框 2px + shadow 2，pad 6）
     shadow_box(d, 114, 135, 229, 253, fill=WHITE, width=2, radius=2, sh_ofs=2)
     hx, hy = 114 + 2 + 6, 135 + 2 + 6
-    d.text((hx, hy), CAP_HEADER, font=ft, fill=(0x55, 0x55, 0x55, 255), anchor="la")
-    d.line([hx, hy + 13, 114 + 116 - 2 - 6, hy + 13], fill=INK, width=1)
     fd = F(BIO_FONT, BIO_SIZE)
     step = line_h(BIO_FONT, BIO_SIZE) + 1        # 默认 cn_20 时 = 22，零回归
     for i, ln in enumerate(wrap(BIO, fd, 102)):
-        d.text((hx, hy + 20 + i * step), ln, font=fd, fill=INK + (255,), anchor="la")
+        d.text((hx, hy + i * step), ln, font=fd, fill=INK + (255,), anchor="la")
 
     # 底部墨色时钟面板 (10,264) 220x48（白框 2px，radius 6）
     bx0, by0, bx1, by1 = 10, 264, 229, 311
@@ -603,8 +672,14 @@ def bake_home(soc: int = 86, *, hh: str = "10", mm: str = "24", date_text: str |
 
 
 # --- P2 加好友页（badge_page_qr.c） -------------------------------------------
-def bake_qr(sel: int = 0, soc: int = 86) -> Image.Image:
-    """sel: 0=钉钉（Tab0 选中，扫描青）1=微信（Tab1 选中，波普绿）。"""
+def bake_qr(sel: int = 0, soc: int = 86, *, dynamic: bool = True,
+            bar: bool = True) -> Image.Image:
+    """sel: 0=钉钉（Tab0 选中，扫描青）1=微信（Tab1 选中，波普绿）。
+
+    dynamic=False 输出「静态底板」：电量只画外壳+凸起，不画百分比文本与指示条
+    （二者由 batq_* 精灵块运行时覆盖）→「底板 + 精灵块 == 整页」逐像素成立。
+    电量画在黄底头条内，与 Tab 无关 → 两个 sel 的 batq_* 精灵块共用一套。
+    """
     canvas = Image.new("RGB", (W, H), PAPER_POP)
     canvas.paste(tile_bg(W, H, load_image_c("badge_img_dots_pop")), (0, 0))
     d = ImageDraw.Draw(canvas)
@@ -624,7 +699,8 @@ def bake_qr(sel: int = 0, soc: int = 86) -> Image.Image:
     d.text((cx_l + 58, cy_m), QR_TITLE, font=f14, fill=INK + (255,), anchor="lm")
 
     # 头条内电量：相对头条内容区（p_right=223, p_top=12）
-    draw_battery(canvas, d, -7, 5, soc, p_right=right_c, p_top=top_c)
+    draw_battery(canvas, d, -7, 5, soc, p_right=right_c, p_top=top_c,
+                 pct=dynamic, bar=dynamic and bar)
 
     # 双 Tab：width 100，cn_14 居中，TOP_LEFT(16 + i*108, 40)
     active_bg = (CYAN, WGREEN)
@@ -672,6 +748,153 @@ def bake_qr(sel: int = 0, soc: int = 86) -> Image.Image:
     return canvas
 
 
+# --- P3 纪念日倒计时页（badge_page_anniv.c） ----------------------------------
+# 复用首页漫画风：米色网点纸 + 白底墨框大分镜面板 + 面板内墨色倒计时窗口 + 黄字红影数字
+ANNIV_PANEL = (10, 34, 229, 253)      # 白底墨框大分镜面板（同首页分镜框：3px 框 + shadow 3）
+ANNIV_HOLE = (14, 100, 225, 212)      # 面板内墨色倒计时窗口（白框 2 + radius 6）
+ANNIV_NUM_SIZE = 52                   # 倒计时数字字号
+ANNIV_N = 4                           # 固定 4 个数字槽（不足 4 位左补空槽）
+ANNIV_CY = (ANNIV_HOLE[1] + ANNIV_HOLE[3]) // 2      # 数字行垂直中心
+ANNIV_DH = line_h("cn", ANNIV_NUM_SIZE) + 8          # 槽高（含错位阴影余量）
+ANNIV_Y = ANNIV_CY - ANNIV_DH // 2                   # 槽顶 y
+ANNIV_DW = round(max(text_w(c, F("cn", ANNIV_NUM_SIZE)) for c in "0123456789")) + 10
+_ANNIV_UNIT_F = F("cn", 26)
+_ANNIV_PCX = (ANNIV_HOLE[0] + ANNIV_HOLE[2]) / 2     # 窗口水平中心
+_ANNIV_GROUP_W = ANNIV_N * ANNIV_DW + 6 + round(text_w(ANNIV_UNIT, _ANNIV_UNIT_F))
+ANNIV_X0 = round(_ANNIV_PCX - _ANNIV_GROUP_W / 2)    # 数字行左缘
+ANNIV_UNIT_X = ANNIV_X0 + ANNIV_N * ANNIV_DW + 6     # 单位「天」左缘
+ANNIV_SLOTS = tuple((ANNIV_X0 + i * ANNIV_DW, ANNIV_DW) for i in range(ANNIV_N))
+
+# 面板顶部句式行「距{name}还有 / 自{name}以来已」的总宽上限：左缘 px0+8，
+# 右缘不超过 D-DAY 角标左缘（≈186）再留 6px 间隙。
+ANNIV_SENT_MAX_W = 180 - (ANNIV_PANEL[0] + 8)
+
+
+def _ord(y: int, m: int, d: int) -> int:
+    """Howard Hinnant days_from_civil：公历 → 自 1970-01-01 起的天数（不依赖平台日期库）。"""
+    y -= m <= 2
+    era = (y if y >= 0 else y - 399) // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+
+def anniv_days(t: datetime.date = None) -> int:
+    """按 ANNIV_MODE 算显示天数：until=距离目标日（当天 0）；since=已是第 N 天（当天 1）。"""
+    if t is None:
+        t = datetime.date.today()
+    ay, am, ad = parse_anniv_date(ANNIV_DATE)
+    diff = _ord(t.year, t.month, t.day) - _ord(ay, am, ad)
+    if ANNIV_MODE == "since":
+        return max(0, diff + 1)
+    return max(0, -diff)
+
+
+def _anniv_digits(d: ImageDraw.ImageDraw, s: str) -> None:
+    """把 s 右对齐画进 4 个数字槽（黄字 + 红色错位阴影；字形按槽位居中 → 可跨槽复用）。
+
+    左侧空位画暗黄「0」占位（数码管熄灭段）→ 数字组恒占满 4 槽 + 单位，
+    整组在墨色窗口内水平居中，短数字时不会出现大片空洞。
+    """
+    s = s[-ANNIV_N:]
+    pad = ANNIV_N - len(s)
+    f = F("cn", ANNIV_NUM_SIZE)
+    for i in range(ANNIV_N):
+        cx = ANNIV_SLOTS[i][0] + ANNIV_DW / 2
+        cy = ANNIV_Y + ANNIV_DH / 2
+        if i < pad:
+            d.text((cx, cy), "0", font=f, fill=ANNIV_OFF + (255,), anchor="mm")
+            continue
+        ch = s[i - pad]
+        d.text((cx + 2, cy + 2), ch, font=f, fill=RED + (255,), anchor="mm")
+        d.text((cx, cy), ch, font=f, fill=HILITE + (255,), anchor="mm")
+
+
+def bake_anniv(*, dynamic: bool = True, days=None, soc: int = 86,
+               pct: bool = True, bar: bool = True) -> Image.Image:
+    """渲染 P3 纪念日倒计时整页。
+
+    dynamic=False 时不画倒计时数字 / 电量百分比与指示条 → 输出「静态底板」；
+    底板与整页的差异严格落在数字槽与电量窗口内，因此「底板 + 精灵块 == 整页」成立。
+    顶部右侧电量与首页逐参相同且底色一致 → 直接复用首页的 bat_* 精灵块。
+    """
+    canvas = Image.new("RGB", (W, H), PAPER)
+    canvas.paste(tile_bg(W, H, load_image_c("badge_img_dots_paper")), (0, 0))
+    d = ImageDraw.Draw(canvas)
+
+    # 顶部左侧页码徽章 ANNIV // 03（红底白字，-3°）
+    layer, cw, ch = build_chip(TAG_ANNIV, "latin", 12, WHITE, RED,
+                               pad_h=4, pad_v=1, border=2, shadow=INK, sh_ofs=2)
+    place(canvas, layer, 14 + cw / 2, 9 + ch / 2, angle=-3.0)
+
+    # 右上角电量（与首页逐参相同 → 该窗口像素一致，可复用 bat_*）
+    draw_battery(canvas, d, -12, 13, soc, pct=dynamic and pct, bar=dynamic and bar)
+
+    # 白底墨框大分镜面板（同首页分镜框：3px 墨框 + shadow 3）
+    px0, py0, px1, py1 = ANNIV_PANEL
+    shadow_box(d, px0, py0, px1, py1, fill=WHITE, width=3, radius=4, sh_ofs=3)
+
+    # 面板顶部句式行（左对齐，替代原固定「纪念日」标签）：
+    # 「距 {name} 还有」/「自 {name} 以来已」——事件名嵌在句子里，黄底小块强调。
+    # 总宽超限先降字号（20→14）再截断事件名，右缘不越过右上 D-DAY 角标（≈186）。
+    pre, suf = ANNIV_CAP[ANNIV_MODE]
+    label = ANNIV_LABEL
+    size = 20
+    while True:
+        fx = F("cn", size)
+        wpre, wsuf = text_w(pre, fx), text_w(suf, fx)
+        wname = text_w(label, fx)
+        wtot = wpre + 4 + wname + 8 + 4 + wsuf          # 名字块左右各 pad 4
+        if wtot <= ANNIV_SENT_MAX_W or size <= 14:
+            break
+        size = 14
+    while wtot > ANNIV_SENT_MAX_W and len(label) > 1:   # 最小字号仍超 → 截事件名
+        label = label[:-1]
+        wname = text_w(label, fx)
+        wtot = wpre + 4 + wname + 8 + 4 + wsuf
+    sx = px0 + 8
+    bh = line_h("cn", size) + 4                          # 名字块高
+    sy = ANNIV_HOLE[1] - bh / 2 - 6                      # 句子行贴在表盘上方（块底距表盘 6px）
+    d.text((sx, sy), pre, font=fx, fill=INK + (255,), anchor="lm")
+    bx0 = sx + wpre + 4
+    d.rounded_rectangle([bx0, sy - bh / 2, bx0 + wname + 8, sy + bh / 2],
+                        radius=3, fill=HILITE)
+    d.text((bx0 + 4 + wname / 2, sy), label, font=fx, fill=INK + (255,), anchor="mm")
+    d.text((bx0 + wname + 12 + 4, sy), suf, font=fx, fill=INK + (255,), anchor="lm")
+
+    # 面板内右上：红底白字漫画角标 D-DAY（+6°）
+    layer, cw, ch = build_chip(TAG_DDAY, "latin", 12, WHITE, RED,
+                               pad_h=4, pad_v=1, border=2, shadow=INK, sh_ofs=2)
+    place(canvas, layer, px1 - 6 - cw / 2, py0 + 12 + ch / 2, angle=6.0)
+
+    # 面板内墨色倒计时窗口（白框 2 + radius 6）：黄字红影 4 位数字 + 单位「天」
+    hx0, hy0, hx1, hy1 = ANNIV_HOLE
+    d.rounded_rectangle([hx0, hy0, hx1, hy1], radius=6, fill=INK, outline=WHITE, width=2)
+    d.text((ANNIV_UNIT_X, ANNIV_Y + ANNIV_DH / 2), ANNIV_UNIT,
+           font=_ANNIV_UNIT_F, fill=HILITE + (255,), anchor="lm")
+    if dynamic:
+        _anniv_digits(d, str(days if days is not None else anniv_days()))
+
+    # 表盘下方一行：「{name}：{日期}」（墨字，居中；名称过长则截断保护）
+    fx2 = F("cn", 14)
+    cap_name = ANNIV_LABEL
+    cap = "%s：%s" % (cap_name, ANNIV_DATE)
+    while text_w(cap, fx2) > ANNIV_PANEL[2] - ANNIV_PANEL[0] - 8 and len(cap_name) > 1:
+        cap_name = cap_name[:-1]
+        cap = "%s：%s" % (cap_name, ANNIV_DATE)
+    d.text((_ANNIV_PCX, hy1 + 16), cap, font=fx2, fill=INK + (255,), anchor="ma")
+
+    # 底部按键提示双胶囊（与 P2 同款）
+    for x, bg, key in ((14, HILITE, KEY_SWITCH), (128, WHITE, KEY_BACK)):
+        shadow_box(d, x, 286, x + 97, 309, fill=bg, width=2, radius=3, sh_ofs=2)
+        layer, cw, ch = build_chip(key, "latin", 20, WHITE, INK,
+                                   pad_h=3, pad_v=0, border=0, radius=1)
+        place(canvas, layer, x + 2 + (94 - cw) // 2 + cw / 2, 288 + (20 - ch) // 2 + ch / 2)
+
+    return canvas
+
+
 # --- 输出 ---------------------------------------------------------------------
 def to_rgb565_be(img: Image.Image) -> bytes:
     """RGB888 → RGB565 **大端**（st7789p3.draw_image 要求大端，与 LVGL 小端相反）。"""
@@ -687,6 +910,19 @@ def _crop(page: Image.Image, rect) -> Image.Image:
     return page.crop((x, y, x + w, y + h))
 
 
+def _diff_window(a: Image.Image, b: Image.Image, pad: int = 2) -> tuple:
+    """两页像素差异的合围框（外扩 pad），用于自动求「动态元素」窗口。"""
+    from PIL import ImageChops
+    x0, y0, x1, y1 = ImageChops.difference(a, b).getbbox()
+    return (max(0, x0 - pad), max(0, y0 - pad),
+            min(W, x1 + pad) - max(0, x0 - pad), min(H, y1 + pad) - max(0, y0 - pad))
+
+
+# P2 头条电量窗口：soc=100（满文本+满条）与 soc=0（最短文本+无条）逐像素差异，
+# 自动覆盖百分比文本与指示条，几何参数变了无需手调。
+WIN_BAT_QR = _diff_window(bake_qr(sel=0, soc=100), bake_qr(sel=0, soc=0, bar=False))
+
+
 def sprite_rect(name: str):
     """精灵块的规范窗口 (x, y, w, h)（日期块的 x 取该类的首个槽位）。"""
     if name.startswith("hh_"):
@@ -697,6 +933,10 @@ def sprite_rect(name: str):
         return WIN_COL
     if name.startswith("bat_"):
         return WIN_BAT
+    if name.startswith("batq_"):
+        return WIN_BAT_QR
+    if name.startswith("num_"):                       # 纪念日数字：x 取末槽位
+        return (ANNIV_SLOTS[-1][0], ANNIV_Y, ANNIV_DW, ANNIV_DH)
     body = name[5:]                                   # date_xxx
     k = "d" if body.isdigit() else ("wd" if body.startswith("wd") else body)
     return ({"d": 21, "da": 53, "zh": 98, "wd": 112}[k], DATE_Y, DATE_W[k], DATE_H)
@@ -735,6 +975,21 @@ def build_sprites() -> dict:
         spr[f"bat_{soc:03d}"] = _crop(bake_home(soc=soc), WIN_BAT)
     for soc in range(6):
         spr[f"bat_{soc:03d}_off"] = _crop(bake_home(soc=soc, bar=False), WIN_BAT)
+
+    # P2 头条电量（黄底，与首页米底不同 → 独立裁一套；两 sel 的电量区像素相同，共用）
+    for soc in range(101):
+        spr[f"batq_{soc:03d}"] = _crop(bake_qr(sel=0, soc=soc), WIN_BAT_QR)
+    for soc in range(6):
+        spr[f"batq_{soc:03d}_off"] = _crop(bake_qr(sel=0, soc=soc, bar=False),
+                                           WIN_BAT_QR)
+
+    # 纪念日倒计时数字：cn 数字非等宽 → 逐数字烘焙；字形按槽位居中 → 可跨槽复用
+    for dv in range(10):
+        page = bake_anniv(days="999%d" % dv)          # 4 位 → 末槽即该数字
+        x = ANNIV_SLOTS[-1][0]
+        spr[f"num_{dv}"] = _crop(page, (x, ANNIV_Y, ANNIV_DW, ANNIV_DH))
+    spr["num_0_dim"] = _crop(bake_anniv(days="123"),   # 空位占位「0」（槽 0 即前导空位）
+                             (ANNIV_SLOTS[0][0], ANNIV_Y, ANNIV_DW, ANNIV_DH))
     return spr
 
 
@@ -799,6 +1054,77 @@ def verify(base: Image.Image, spr: dict) -> None:
     print(f"  校验通过：底板 + 精灵块 == 整页（逐像素，{len(states)} 个状态）")
 
 
+def compose_anniv(base: Image.Image, spr: dict, days, soc: int, bar: bool = True) -> Image.Image:
+    """按板端逻辑（底板 + 数字/电量精灵块定点覆盖）复算出纪念日整页，用于校验。"""
+    img = base.copy()
+    s = str(days)[-ANNIV_N:]
+    pad = ANNIV_N - len(s)
+    for i in range(pad):
+        img.paste(spr["num_0_dim"], (ANNIV_SLOTS[i][0], ANNIV_Y))
+    for i, ch in enumerate(s):
+        img.paste(spr["num_" + ch], (ANNIV_SLOTS[pad + i][0], ANNIV_Y))
+    nm = f"bat_{soc:03d}" if bar else f"bat_{soc:03d}_off"
+    x, y, _w, _h = sprite_rect(nm)
+    img.paste(spr[nm], (x, y))
+    return img
+
+
+def verify_anniv(base: Image.Image, spr: dict) -> None:
+    """断言「纪念日底板 + 精灵块 == 整页」逐像素成立（位数变化 + 电量亮/暗态）。"""
+    states = [
+        (0, 86, True),
+        (7, 100, True),
+        (42, 0, True),
+        (365, 5, False),        # 低电量：指示条暗态
+        (1234, 12, True),
+        (9999, 100, True),
+    ]
+    bad = 0
+    for days, soc, bar in states:
+        got = compose_anniv(base, spr, days, soc, bar)
+        ref = bake_anniv(days=days, soc=soc, dynamic=True, bar=bar)
+        bb = ImageChops.difference(got, ref).convert("L").getbbox()
+        tag = f"days={days:4d} soc={soc:3d} bar={int(bar)}"
+        if bb is None:
+            print(f"  ok   {tag}")
+        else:
+            bad += 1
+            print(f"  FAIL {tag} -> 差异窗口 {bb}")
+    if bad:
+        raise SystemExit(f"纪念日底板 + 精灵块 != 整页：{bad}/{len(states)} 个状态不一致")
+    print(f"  校验通过：纪念日底板 + 精灵块 == 整页（逐像素，{len(states)} 个状态）")
+
+
+def compose_qr(base: Image.Image, spr: dict, soc: int, bar: bool = True) -> Image.Image:
+    """按板端逻辑（底板 + batq_* 电量块定点覆盖）复算出 P2 整页，用于校验。"""
+    img = base.copy()
+    nm = f"batq_{soc:03d}" if bar else f"batq_{soc:03d}_off"
+    x, y, _w, _h = sprite_rect(nm)
+    img.paste(spr[nm], (x, y))
+    return img
+
+
+def verify_qr(base: Image.Image, spr: dict) -> None:
+    """断言「P2 底板 + 电量块 == 整页」逐像素成立（两个 sel × 电量亮/暗态）。"""
+    states = [(100, True), (86, True), (20, True), (5, False), (0, True)]
+    bad = 0
+    for sel, tag in ((0, "钉钉"), (1, "微信")):
+        base = bake_qr(sel=sel, dynamic=False, bar=False)
+        for soc, bar in states:
+            got = compose_qr(base, spr, soc, bar)
+            ref = bake_qr(sel=sel, soc=soc, dynamic=True, bar=bar)
+            bb = ImageChops.difference(got, ref).convert("L").getbbox()
+            label = f"sel={tag} soc={soc:3d} bar={int(bar)}"
+            if bb is None:
+                print(f"  ok   {label}")
+            else:
+                bad += 1
+                print(f"  FAIL {label} -> 差异窗口 {bb}")
+    if bad:
+        raise SystemExit(f"P2 底板 + 电量块 != 整页：{bad}/{len(states) * 2} 个状态不一致")
+    print(f"  校验通过：P2 底板 + 电量块 == 整页（逐像素，{len(states) * 2} 个状态）")
+
+
 def write_sprites_py(table: dict) -> str:
     out = [
         "# -*- coding: utf-8 -*-",
@@ -806,7 +1132,8 @@ def write_sprites_py(table: dict) -> str:
         "",
         "SPR[name] = (offset, x, y, w, h)：offset 为 sprites.raw 内字节偏移，",
         "(x, y) 为 blit 起点，(w, h) 为窗口尺寸，payload = w*h*2 字节 RGB565 大端。",
-        "日期块的 x 仅取该类的首个槽位，实际槽位见 DATE_SLOTS。",
+        "日期块的 x 仅取该类的首个槽位，实际槽位见 DATE_SLOTS；",
+        "纪念日数字块的 x 仅取末槽位，实际槽位见 ANNIV_SLOTS。",
         '"""',
         "",
         'RAW = "sprites.raw"',
@@ -817,7 +1144,25 @@ def write_sprites_py(table: dict) -> str:
     ]
     for kind, x, w in DATE_SLOTS:
         out.append(f"    ({kind!r}, {x}, {w}),")
-    out += [")", "", "SPR = {"]
+    out += [
+        ")",
+        "",
+        f"ANNIV_N = {ANNIV_N}",
+        f"ANNIV_Y = {ANNIV_Y}",
+        f"ANNIV_DW = {ANNIV_DW}",
+        f"ANNIV_DH = {ANNIV_DH}",
+        f"ANNIV_DATE = {ANNIV_DATE!r}",
+        f"ANNIV_YMD = {parse_anniv_date(ANNIV_DATE)!r}",
+        f"ANNIV_MODE = {ANNIV_MODE!r}",
+        "ANNIV_SLOTS = (",
+    ]
+    for x, w in ANNIV_SLOTS:
+        out.append(f"    ({x}, {w}),")
+    out += [
+        ")",
+        "",
+        "SPR = {",
+    ]
     for name in sorted(table):
         out.append(f"    {name!r}: {table[name]!r},")
     out += ["}", ""]
@@ -836,12 +1181,22 @@ def main() -> None:
     full.save(OUT_DIR / "home.png")
     full.resize((W * 2, H * 2), Image.NEAREST).save(OUT_DIR / "home_2x.png")
 
+    # P3 纪念日倒计时页：静态底板 + 整页预览
+    abase = bake_anniv(dynamic=False, bar=False)
+    araw = to_rgb565_be(abase)
+    (OUT_DIR / "anniv.raw").write_bytes(araw)
+    print(f"+ anniv.raw (静态底板)  {W}x{H}  {len(araw)} B")
+    afull = bake_anniv()
+    afull.save(OUT_DIR / "anniv.png")
+    afull.resize((W * 2, H * 2), Image.NEAREST).save(OUT_DIR / "anniv_2x.png")
+
     for sel, tag in ((0, "qr_ding"), (1, "qr_wx")):
+        qbase = bake_qr(sel, dynamic=False, bar=False)     # 静态底板（板端上屏那张）
+        raw = to_rgb565_be(qbase)
+        (OUT_DIR / f"{tag}.raw").write_bytes(raw)
+        print(f"+ {tag}.raw (静态底板)  {W}x{H}  {len(raw)} B")
         qr = bake_qr(sel)
         qr.save(OUT_DIR / f"{tag}.png")
-        raw = to_rgb565_be(qr)
-        (OUT_DIR / f"{tag}.raw").write_bytes(raw)
-        print(f"+ {tag}.raw  {W}x{H}  {len(raw)} B")
         qr.resize((W * 2, H * 2), Image.NEAREST).save(OUT_DIR / f"{tag}_2x.png")
 
     # P1 动态精灵块：烘焙 → 打包 → 偏移表 → 校验
@@ -852,6 +1207,8 @@ def main() -> None:
     print(f"+ sprites.raw  {len(table)} 块  {len(payload)} B")
     print(f"+ tools/sprites.py  {len(table)} 条")
     verify(base, spr)
+    verify_anniv(abase, spr)
+    verify_qr(bake_qr(sel=0, dynamic=False, bar=False), spr)
 
 
 if __name__ == "__main__":

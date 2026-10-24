@@ -10,5 +10,8 @@
   "bio_size": 20,
   "avatar_zoom": 1.0,
   "avatar_dx": 0.0,
-  "avatar_dy": 0.0
+  "avatar_dy": 0.0,
+  "anniv_label": "纪念日",
+  "anniv_date": "2024年10月20日",
+  "anniv_mode": "since"
 }
